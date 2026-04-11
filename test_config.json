@@ -1,0 +1,12 @@
+{
+  "experiment_type": "kernel_filter",
+  "iteration_id": "dry_run_01",
+  "llm_reasoning": "Sharpening cameraman.png as a test case.",
+  "kernel": [
+    [ 0, -1,  0],
+    [-1,  5, -1],
+    [ 0, -1,  0]
+  ],
+  "target_images": ["cameraman"],
+  "target_size": [256, 256]
+}
