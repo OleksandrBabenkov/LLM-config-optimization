@@ -23,7 +23,7 @@ Analyze the historical results provided in the context. Formulate a hypothesis o
 `;
 
 const EXPERIMENT_CONFIG_SCHEMA = {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  //"$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "properties": {
     "experiment_type": {
@@ -63,7 +63,7 @@ const EXPERIMENT_CONFIG_SCHEMA = {
     }
   },
   "required": ["experiment_type", "parameters", "reasoning"],
-  "additionalProperties": false
+  //"additionalProperties": false
 };
 
 const HALL_OF_FAME_TEMPLATE = `
