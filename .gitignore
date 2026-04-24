@@ -3,6 +3,8 @@ data/
 PROGRESS.md
 DOCS.md
 credentials.json
+token.json
+.devcontainer/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
