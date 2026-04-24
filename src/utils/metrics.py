@@ -12,6 +12,8 @@ def calculate_psnr(image_true: np.ndarray, image_test: np.ndarray) -> float:
     Returns:
         PSNR value.
     """
+    if np.array_equal(image_true, image_test):
+        return 99.0
     return peak_signal_noise_ratio(image_true, image_test, data_range=255)
 
 def calculate_ssim(image_true: np.ndarray, image_test: np.ndarray) -> float:

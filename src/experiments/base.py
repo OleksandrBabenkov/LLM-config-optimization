@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 class BaseExperiment(ABC):
     """
@@ -7,14 +7,14 @@ class BaseExperiment(ABC):
     Ensures a consistent interface for the compute node's execution loop.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
-        Initialize the experiment with a configuration dictionary.
+        Initialize the experiment with an optional configuration dictionary.
         
         Args:
             config: A dictionary containing experiment-specific parameters.
         """
-        self.config = config
+        self.config = config if config is not None else {}
 
     @abstractmethod
     def setup(self, config_dict: Dict[str, Any]) -> None:

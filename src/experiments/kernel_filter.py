@@ -5,6 +5,7 @@ from src.experiments.base import BaseExperiment
 from src.experiments.registry import ExperimentRegistry
 from src.utils.data_loader import DataLoader
 from src.utils.metrics import calculate_psnr, calculate_ssim
+from src.utils.corruptor import apply_gaussian_noise
 
 @ExperimentRegistry.register("kernel_filter")
 class KernelFilter(BaseExperiment):
@@ -13,9 +14,9 @@ class KernelFilter(BaseExperiment):
     Inherits from BaseExperiment and applies an NxN kernel filter using cv2.filter2D.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
-        Initialize the KernelFilter with a configuration dictionary.
+        Initialize the KernelFilter with an optional configuration dictionary.
         
         Args:
             config: A dictionary containing experiment-specific parameters.
@@ -34,17 +35,18 @@ class KernelFilter(BaseExperiment):
         Args:
             config_dict: A dictionary containing experiment-specific parameters.
         """
-        config = config_dict
+        # Experiment parameters are now strictly expected within the 'parameters' key
+        parameters = config_dict.get("parameters", {})
         
-        if "kernel" not in config:
-            raise ValueError("Config must contain 'kernel' (NxN list or ndarray)")
+        if "kernel" not in parameters:
+            raise ValueError("Config 'parameters' must contain 'kernel' (NxN list or ndarray)")
             
-        self.kernel = np.array(config["kernel"], dtype=np.float32)
+        self.kernel = np.array(parameters["kernel"], dtype=np.float32)
         
-        target_size = config.get("target_size", (256, 256))
+        target_size = parameters.get("target_size", (256, 256))
         self.data_loader = DataLoader(target_size=tuple(target_size))
         
-        self.target_images = config.get("target_images", ["lena", "cameraman"])
+        self.target_images = parameters.get("target_images", ["lena", "cameraman"])
         self._raw_images = []
         self._filtered_images = []
 
@@ -62,14 +64,26 @@ class KernelFilter(BaseExperiment):
         self._filtered_images = []
         
         for name in self.target_images:
-            # DataLoader.load_or_create can handle synthetic names or paths
+            # Load original ground truth
             image = self.data_loader.load_or_create(name)
-            image = self.data_loader.normalize(image)
+            image = self.data_loader.normalize(image) # Resizes to target_size
             
-            self._raw_images.append(image)
+            # Store original as ground truth
+            self._raw_images.append(image.copy())
             
-            # Apply kernel filter using cv2.filter2D
-            filtered = cv2.filter2D(image, -1, self.kernel)
+            # 1. On-the-Fly Corruption: Apply deterministic corruption
+            # Using defaults for now (sigma=25), could be parameterized in config
+            corrupted = apply_gaussian_noise(image, seed=42)
+            
+            # 3. Float Processing: Convert to float32 before filtering to prevent rounding issues
+            corrupted_f32 = corrupted.astype(np.float32)
+            
+            # Apply kernel filter to the corrupted image
+            # ddepth=cv2.CV_32F to ensure float output
+            filtered_f32 = cv2.filter2D(corrupted_f32, cv2.CV_32F, self.kernel)
+            
+            # Ensure output is clipped to valid range but keep as float32 for high precision metrics
+            filtered = np.clip(filtered_f32, 0, 255)
             self._filtered_images.append(filtered)
             
         return {
