@@ -13,7 +13,7 @@ Your objective is to discover optimal mathematical image filters through iterati
 3. Discover novel kernel configurations that outperform standard baseline filters (e.g., Gaussian, Sobel).
 
 ### OPERATIONAL CONSTRAINTS
-- Output ONLY valid JSON according to the provided schema.
+- Output ONLY a valid JSON object. Do not include markdown formatting or conversational text.
 - Your "reasoning" field must contain a technical, mathematical justification for the proposed parameters.
 - Focus on the relationship between kernel weights and high-frequency noise suppression or edge preservation.
 - Do not provide conversational filler or explanations outside the JSON object.

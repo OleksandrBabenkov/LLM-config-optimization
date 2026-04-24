@@ -46,7 +46,7 @@ function initializeMasterTrackerHeaders() {
  * (Optional automation for Task 3.1)
  */
 function setupProjectWorkspace() {
-  const rootName = 'Image_Optimization_Pipeline';
+  const rootName = 'LLM-config-optimization';
   const folders = DriveApp.getFoldersByName(rootName);
   let rootFolder;
   
