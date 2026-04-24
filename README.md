@@ -1,83 +1,117 @@
-```markdown
 # LLM-Driven Autonomous Pipeline for Mathematical Image Filter Optimization
 
-This repository contains the codebase for an autonomous, agentic workflow that utilizes Large Language Models (LLMs) to heuristically discover and optimize mathematical image filters. 
+![Status](https://img.shields.io/badge/status-MVP-success)
+![Python](https://img.shields.io/badge/python-3.13-blue)
+![Orchestrator](https://img.shields.io/badge/orchestrator-Google_Apps_Script-orange)
 
-By decoupling the cognitive reasoning (LLM) and workflow routing (Google Apps Script) from the heavy mathematical computation (Python), this architecture establishes a highly scalable, serverless data lake using Google Workspace infrastructure. It bypasses traditional compute and orchestration bottlenecks associated with automated machine learning (AutoML).
+An autonomous "AI Researcher" system that iteratively optimizes mathematical convolution kernels to restore noisy images. The system uses a Large Language Model (LLM) as a heuristic search engine to propose filters, which are then tested by a modular Python compute node.
 
-## System Architecture
+## 1. Project Purpose
+This project explores the application of **Agentic Workflows** to classical computer vision tasks. Instead of manually tweaking image filters, this system creates a closed-loop feedback cycle:
+- **Heuristic Search:** An LLM (Gemini 3 Flash Preview) hypothesizes which mathematical matrices will best suppress noise while preserving edges.
+- **Automated Validation:** A Python compute node executes these hypotheses on standardized datasets and reports quantitative performance (PSNR/SSIM).
+- **Continuous Improvement:** Results are fed back into the LLM's "memory," allowing it to learn from previous successes and failures.
 
-The pipeline operates as a continuous, asynchronous feedback loop:
+## 2. Technologies Used
+- **Python 3.13:** Core execution engine for image processing.
+- **OpenCV & Scikit-Image:** Mathematical operations and metric calculations.
+- **Google Apps Script (GAS):** Cloud-based orchestrator managing the API loop.
+- **Google Drive API:** Asynchronous data bridge for config/result exchange.
+- **Google Sheets:** Real-time dashboard and historical data storage.
+- **Gemini 3 Flash Preview:** The cognitive engine driving the filter optimization.
 
-1. **The Orchestrator (Google Apps Script):** Manages state, handles memory ("Hall of Fame"), and sends strictly engineered prompts to the LLM API.
-2. **The Cognitive Core (LLM):** Acts as a heuristic search engine. It analyzes historical quantitative metrics (PSNR, SSIM) and proposes novel configurations (e.g., matrix weights or hyperparameters) formatted as JSON.
-3. **The Data Lake (Google Drive/Sheets):** Acts as the asynchronous transport layer and visual dashboard. Configurations are dropped into Drive; results are logged in Sheets.
-4. **The Compute Node (Python):** An extensible, object-oriented execution engine. It polls Google Drive for new configurations, runs the mathematical experiments against corrupted image datasets, evaluates the results, and uploads the metrics back to the data lake.
+---
 
-## Features
+## 3. System Architecture & Workflow
 
-* **Serverless Orchestration:** Utilizes Google Apps Script and Google Drive, completely avoiding the need for dedicated orchestration servers.
-* **Abstract Execution Engine:** The Python compute node uses the Factory Pattern and Abstract Base Classes. It can dynamically switch between simple OpenCV matrix convolutions and complex PyTorch neural network training without altering the orchestration layer.
-* **Self-Reflecting Agentic Loop:** The LLM receives programmatic feedback (evaluation metrics and Python error tracebacks) to autonomously correct hallucinations and optimize mathematical outputs.
-* **Live Dashboards:** Results are asynchronously piped into Google Sheets, updating live performance charts in real-time.
+The pipeline operates in a 4-stage cycle:
 
-## Directory Structure
+1.  **Hypothesis:** The LLM proposes a new $N \times N$ kernel matrix based on the "Hall of Fame" (top-performing historical filters).
+2.  **Orchestration:** Google Apps Script drops the proposal into the `LLM_Configs_In` folder on Google Drive.
+3.  **Experiment:** The local Python node detects the file, corrupts a clean image with Gaussian noise, applies the LLM's filter, and uploads the results.
+4.  **Analysis:** GAS ingests the results into the Master Tracker sheet and triggers the next iteration.
 
+![google sheets results](images/sheets.png)
+
+![drive folder structure](images/drive.png)
+
+![apps script project](images/apps.png)
+
+![vscode run](images/vscode.png)
+
+---
+
+## 4. Project Structure
 ```text
-├── data/
-│   ├── raw/                 # Original, untouched datasets
-│   └── corrupted/           # Datasets with injected noise/blur
+pipeline/
 ├── src/
-│   ├── experiments/
-│   │   ├── base.py          # Abstract Base Class (BaseExperiment)
-│   │   ├── factory.py       # Dynamic module loader
-│   │   ├── kernel_filter.py # OpenCV matrix convolution implementation
-│   │   └── resnet_tune.py   # Example PyTorch implementation
-│   ├── utils/
-│   │   ├── corruptor.py     # Deterministic image degradation scripts
-│   │   └── metrics.py       # PSNR and SSIM calculation functions
-│   └── main.py              # Main Google Drive polling and execution loop
-├── credentials.json         # Google Cloud Service Account key (DO NOT COMMIT)
-├── requirements.txt         # Python dependencies
-└── README.md
+│   ├── experiments/       # Modular experiment registry (KernelFilter logic)
+│   ├── orchestrator/      # Google Apps Script (.js) and LLM Prompts
+│   ├── utils/             # Drive I/O, Data Loading, and Metrics helpers
+│   └── main.py            # Async compute node polling loop
+├── data/
+│   └── raw/               # Ground truth datasets (Cameraman, MedMNIST)
+├── tests/                 # Smoke tests for architectural integrity
+├── README.md              # Project documentation
 ```
 
-## Prerequisites
+---
 
-* Python 3.9+
-* A Google Cloud Project with the **Google Drive API** and **Google Sheets API** enabled.
-* A Google Cloud Service Account with a generated `credentials.json` file.
-* Access to an LLM API (e.g., OpenAI, Anthropic, or Google Gemini).
-* A Google Workspace account to host the Google Apps Script and Drive folders.
+## 5. Installation & Setup
 
-## Setup Instructions
+### Prerequisites
+- Conda or a Python 3.10+ environment.
+- A Google Cloud Project with the **Google Drive API** **Google Sheets API** **Apps Script API** enabled.
+- A **Gemini API Key** from [Google AI Studio](https://aistudio.google.com/).
 
-### 1. Python Compute Node Initialization
-Clone the repository and install the required dependencies:
+### Step 1: Python Compute Node
 ```bash
-git clone [https://github.com/OleksandrBabenkov/LLM-config-optimization](https://github.com/OleksandrBabenkov/LLM-config-optimization)
-cd LLM-config-optimization
-pip install -r requirements.txt
+# Create and activate environment
+conda create -n config_opt python=3.13
+conda activate config_opt
+
+# Install dependencies
+pip install opencv-python numpy pandas scikit-image google-api-python-client google-auth-httplib2 google-auth-oauthlib medmnist
 ```
-Place your `credentials.json` file in the root directory. **Ensure this file is added to your `.gitignore`.**
 
-### 2. Google Workspace Configuration
-1. Create a master folder in Google Drive.
-2. Create two subfolders: `LLM_Configs_In` and `Python_Results_Out`.
-3. Share both subfolders with the `client_email` address found in your `credentials.json` file, granting **Editor** permissions.
-4. Create a new Google Sheet for logging. Copy the Folder IDs and Sheet ID from their URLs to be used as environment variables.
+### Step 2: Authentication
+1.  Obtain your `credentials.json` from the Google Cloud Console (OAuth 2.0 Desktop app).
+2.  Place it in the project root.
+3.  Run `python tests/test_drive_auth.py` to authorize and generate `token.json`.
 
-### 3. Orchestrator Deployment (Google Apps Script)
-1. Open your Google Sheet, navigate to **Extensions > Apps Script**.
-2. Deploy the JavaScript orchestrator code (managing the `UrlFetchApp` LLM requests and Sheet appending).
-3. Set a time-driven trigger in the Apps Script dashboard to execute the pipeline loop (e.g., every 1 minute).
+### Step 3: Cloud Orchestrator
+1.  Open a Google Sheet.
+2.  Go to `Extensions > Apps Script`.
+3.  Copy the files from `src/orchestrator/` into the editor.
+4.  Add your `GEMINI_API_KEY` to **Project Settings > Script Properties**.
+5.  Run `initializeMasterTrackerHeaders()` once.
 
-## Usage
+---
 
-1. **Start the Compute Node:** Run the main Python polling script locally or on a dedicated machine/Colab instance.
-   ```bash
-   python src/main.py
-   ```
-2. **Initialize the Loop:** Drop a manual `config.json` into the `LLM_Configs_In` Drive folder, or manually trigger the Google Apps Script to make the initial LLM call.
-3. **Monitor:** Open the Google Sheet to watch the autonomous researcher evaluate, fail, iterate, and optimize the mathematical parameters in real-time.
-```
+## 6. Usage
+
+1.  **Start the Body (Python):**
+    ```bash
+    python -m src.main
+    ```
+    The node will enter a persistent polling state, checking for new configurations every 30 seconds.
+
+2.  **Enable the Heartbeat (GAS):**
+    - In the Apps Script editor, set a **Time-driven trigger** for the `orchestrate` function to run every 1 minute.
+    - Alternatively, run `orchestrate()` manually to start the first loop.
+
+> **[INSERT IMAGE: Google Sheets screenshot showing the PSNR/SSIM metrics and LLM reasoning]**
+
+---
+
+## 7. Key Features
+- **Plug-and-Play Architecture:** The Python node uses a `Registry` pattern, allowing new experiment types (e.g., SciPy optimization or PyTorch models) to be added without changing the core loop.
+- **Hallucination Guard:** GAS logic detects malformed LLM responses and automatically triggers a refined "fallback" retry.
+- **Atomic Operations:** Local files are managed within `tempfile` directories to ensure zero system pollution and robust cleanup.
+- **Idempotent Logging:** The system verifies `Iteration_ID` before appending to the sheet, preventing duplicates.
+
+---
+
+## 8. License
+# Copyright (c) 2026 Oleksandr Babenkov
+# All Rights Reserved
