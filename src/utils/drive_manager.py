@@ -5,7 +5,9 @@ import time
 import random
 import functools
 from typing import List, Optional, Any, Dict, Callable
-from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from googleapiclient.errors import HttpError
@@ -54,70 +56,158 @@ def retry_on_network_error(max_retries: int = 5, initial_backoff: float = 1.0):
         return wrapper
     return decorator
 
+
 class GoogleDriveManager:
-    """Handles Google Drive I/O operations and authentication with Service Account."""
+    """Handles Google Drive I/O operations and authentication with OAuth 2.0."""
 
-    SCOPES: List[str] = ['https://www.googleapis.com/auth/drive']
+    SCOPES: List[str] = ['https://www.googleapis.com/auth/drive.file']
+    
+    # Folder names as class constants to avoid hardcoding
+    ROOT_FOLDER_NAME = "LLM-config-optimization"
+    CONFIG_IN_FOLDER_NAME = "LLM_Configs_In"
+    RESULTS_OUT_FOLDER_NAME = "Python_Results_Out"
 
-    def __init__(self, credentials_path: str = "credentials.json") -> None:
+    def __init__(self, credentials_path: str = "credentials.json", token_path: str = "token.json") -> None:
         """
         Initialize the Drive Manager.
         
         Args:
-            credentials_path: Path to the Google Service Account JSON credentials.
+            credentials_path: Path to the OAuth 2.0 client credentials JSON.
+            token_path: Path to the saved token for persistent authentication.
         """
         self.credentials_path: str = credentials_path
+        self.token_path: str = token_path
         self.service: Optional[Any] = None
+        self.config_in_id: Optional[str] = None
+        self.results_out_id: Optional[str] = None
         self.authenticate()
+        if self.is_ready():
+            self.initialize_folders()
 
     def authenticate(self) -> None:
         """
-        Authenticates using service account credentials.
-        Handles missing credentials gracefully by logging a warning.
+        Authenticates using OAuth 2.0 client credentials.
+        Note: The first run requires user interaction (browser) to generate token.json.
         """
-        if not os.path.exists(self.credentials_path):
+        if not os.path.exists(self.credentials_path) and not os.path.exists(self.token_path):
             logger.warning(
-                "Credentials file not found at %s. "
+                "Credentials file not found at %s and no token at %s. "
                 "Google Drive operations will be unavailable.",
-                self.credentials_path
+                self.credentials_path, self.token_path
             )
             return
 
+        creds = None
+        # token.json stores the user's access and refresh tokens
+        if os.path.exists(self.token_path):
+            creds = Credentials.from_authorized_user_file(self.token_path, self.SCOPES)
+        
+        # If there are no (valid) credentials available, let the user log in.
+        if not creds or not creds.valid:
+            try:
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                else:
+                    if not os.path.exists(self.credentials_path):
+                        logger.error("Credentials file missing for initial OAuth flow.")
+                        return
+
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        self.credentials_path, self.SCOPES
+                    )
+                    # Note: run_local_server will open a browser window for authentication
+                    creds = flow.run_local_server(port=0)
+                
+                # Save the credentials for the next run
+                with open(self.token_path, 'w') as token:
+                    token.write(creds.to_json())
+                    
+            except Exception as e:
+                logger.error("Failed to complete OAuth 2.0 flow: %s", e)
+                self.service = None
+                return
+
         try:
-            creds = service_account.Credentials.from_service_account_file(
-                self.credentials_path, scopes=self.SCOPES
-            )
             self.service = build('drive', 'v3', credentials=creds)
             logger.info("Successfully authenticated with Google Drive API.")
         except Exception as e:
-            logger.error("Failed to authenticate with Google Drive: %s", e)
+            logger.error("Failed to build Drive service: %s", e)
             self.service = None
 
     def is_ready(self) -> bool:
         """Checks if the service is authenticated and ready."""
         return self.service is not None
 
-    @retry_on_network_error()
-    def find_folder_by_name(self, folder_name: str) -> Optional[str]:
+    def initialize_folders(self, force: bool = False) -> None:
         """
-        Finds a folder ID by its name.
+        Automatically initializes the folder structure on Google Drive.
+        - Searches for or creates project root folder.
+        - Searches for or creates input and output folders inside it.
+        - Stores the IDs in instance attributes.
         
         Args:
-            folder_name: The name of the folder to search for.
+            force: If True, re-searches Drive even if IDs are already set.
+        """
+        if not self.is_ready():
+            return
+
+        if not force and self.config_in_id and self.results_out_id:
+            return
+
+        logger.info("Initializing Drive folder structure...")
+        
+        root_id = self.find_folder_by_name(self.ROOT_FOLDER_NAME)
+        if not root_id:
+            logger.info(f"Project root folder '{self.ROOT_FOLDER_NAME}' not found. Creating...")
+            root_id = self.create_folder(self.ROOT_FOLDER_NAME)
+        
+        if not root_id:
+            logger.error(f"Failed to find or create project root folder '{self.ROOT_FOLDER_NAME}'.")
+            return
+
+        if not self.config_in_id or force:
+            self.config_in_id = self.find_folder_by_name(self.CONFIG_IN_FOLDER_NAME, parent_id=root_id)
+            if not self.config_in_id:
+                logger.info(f"Folder '{self.CONFIG_IN_FOLDER_NAME}' not found. Creating...")
+                self.config_in_id = self.create_folder(self.CONFIG_IN_FOLDER_NAME, parent_id=root_id)
+
+        if not self.results_out_id or force:
+            self.results_out_id = self.find_folder_by_name(self.RESULTS_OUT_FOLDER_NAME, parent_id=root_id)
+            if not self.results_out_id:
+                logger.info(f"Folder '{self.RESULTS_OUT_FOLDER_NAME}' not found. Creating...")
+                self.results_out_id = self.create_folder(self.RESULTS_OUT_FOLDER_NAME, parent_id=root_id)
+            
+        logger.info(f"Drive folders initialized: In={self.config_in_id}, Out={self.results_out_id}")
+
+    @retry_on_network_error()
+    def find_folder_by_name(self, folder_name: str, parent_id: Optional[str] = None) -> Optional[str]:
+        """
+        Finds a folder by its name.
+        
+        Args:
+            folder_name: The name of the folder to find.
+            parent_id: Optional ID of the parent folder to search within.
             
         Returns:
-            The folder ID if found, None otherwise.
+            The ID of the folder if found, otherwise None.
         """
         if not self.is_ready():
             return None
 
         query = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        results = self.service.files().list(q=query, fields="files(id, name)").execute()
+        if parent_id:
+            query += f" and '{parent_id}' in parents"
+        
+        results = self.service.files().list(
+            q=query,
+            fields="files(id, name)",
+            spaces='drive'
+        ).execute()
+        
         files = results.get('files', [])
-        if not files:
-            logger.warning(f"Folder '{folder_name}' not found.")
-            return None
-        return files[0]['id']
+        if files:
+            return files[0].get('id')
+        return None
 
     @retry_on_network_error()
     def create_folder(self, folder_name: str, parent_id: Optional[str] = None) -> Optional[str]:
@@ -223,3 +313,27 @@ class GoogleDriveManager:
             fields='id'
         ).execute()
         return file.get('id')
+
+    @retry_on_network_error()
+    def delete_file(self, file_id: str) -> bool:
+        """
+        Deletes a file from Google Drive by its ID.
+        
+        Args:
+            file_id: The ID of the file to delete.
+            
+        Returns:
+            True if deletion succeeded, False otherwise.
+        """
+        if not self.is_ready():
+            return False
+
+        try:
+            self.service.files().delete(fileId=file_id).execute()
+            logger.info(f"Successfully deleted file with ID: {file_id}")
+            return True
+        except HttpError as e:
+            if e.resp.status == 404:
+                logger.warning(f"File with ID {file_id} not found for deletion.")
+                return True # Consider it "deleted" if it's already gone
+            raise
